@@ -15,48 +15,273 @@
  */
 
 .section ".text"
-.global _metadata
-.global _entrypoint
+.global _start
+.global _header
+
+/* Register address constants. */
+.set PMC_SCRATCH_PANIC_COLOR_REG, 0x7000ec40
+.set PMC_CONTROL_REG, 0x7000e400
+.set PMC_CONTROL_ISSUE_RESET, (1 << 4)
 
 /* This is the thermosphere binary header. */
-_metadata:
-    .word 0x30534D54  /* Magic number */
-    .word _metadata  /* Physical base */
-    .word (_entrypoint - _metadata) /* Entrypoint */
-    .word 0xCCCCCCCC  /* Padding */
+_header:
+    .word 0x30534D54         /* Magic number */
+    .word _header            /* Physical base */
+    .word (_start - _header) /* Relative entrypoint */
+    .word 0xCCCCCCCC         /* Padding */
 
-/* Entrypoint for thermosphere. Should execute at 0x80000000. */
-/* Arguments: X0 = EL1 entrypoint, X1 = EL1 argument. */
-_entrypoint:
-    /* Init DAIFSET, get EL */
-    msr daifset, #0xF
-    mrs x2, currentel
-    cmp x2, #8
-    invalid_el:
-    bne invalid_el
-    
-    /* Set VBAR_EL2 */
-    ldr x2, =thermosphere_vectors
-    msr vbar_el2, x2
-    
-    /* Setup for EL1 entry */
-    msr ELR_EL2, x0
-    mov x0, x1
-    ldr x2, =0x3C5
-    msr SPSR_EL2, x2
-    isb
-    
-    /* Set stack for exception entry. */
-    /* SP = STACKS + (0x200 * (core + 1)) */
-    ldr x2, =thermo_el2_stacks_end
-    mrs x3, mpidr_el1
-    and x3, x3, #0x3
-    add x3, x3, #0x1
-    lsl x3, x3, #0x9
-    add x2, x2, x3
-    mov sp, x2
-        
-    /* Jump to EL1, TODO: Actually implement thermosphere functionality */
-    eret
-    // Loop forever.
-    1: b 1b
+
+/**
+ * Simple macro to help with generating vector table entries.
+ */ 
+.macro  ventry  label
+    .align  7
+    b       \label
+.endm
+
+
+/**
+ * Start of day code. This is the first code that executes after we're launched
+ * by the bootloader. We use this only to set up a C environment.
+ * 
+ * x0: contains the EL1 (Horizon) entry point
+ * x1: contains an argument word
+ */
+_start:
+        // Mask all interrupts.
+        msr DAIFset, #0xF
+
+        // Create a simple stack for the hypervisor, while executing in EL2.
+        ldr     x2, =el2_stack_end
+        mov     sp, x2
+
+        // Clear out our binary's bss.
+        stp     x0, x1, [sp, #-16]!
+        bl      _clear_bss
+        ldp     x0, x1, [sp], #16
+
+        // Run the main routine. This shouldn't return.
+        b       main
+
+        // We shouldn't ever reach here; trap.
+1:      b       1b
+
+
+/*
+ * Vector table for interrupts/exceptions that reach EL2.
+ */
+.align  11
+.global el2_vector_table;
+el2_vector_table:
+        ventry _unhandled_vector                // Synchronous EL2t
+        ventry _unhandled_vector                // IRQ EL2t
+        ventry _unhandled_vector                // FIQ EL2t
+        ventry _unhandled_vector                // Error EL2t
+
+        ventry _unhandled_vector                // Synchronous EL2h
+        ventry _unhandled_vector                // IRQ EL2h
+        ventry _unhandled_vector                // FIQ EL2h
+        ventry _unhandled_vector                // Error EL2h
+
+        ventry _handle_hypercall                // Synchronous 64-bit EL0/EL1
+        ventry _unhandled_vector                // IRQ 64-bit EL0/EL1
+        ventry _unhandled_vector                // FIQ 64-bit EL0/EL1
+        ventry _unhandled_vector                // Error 64-bit EL0/EL1
+
+        ventry _unhandled_vector                // Synchronous 32-bit EL0/EL1
+        ventry _unhandled_vector                // IRQ 32-bit EL0/EL1
+        ventry _unhandled_vector                // FIQ 32-bit EL0/EL1
+        ventry _unhandled_vector                // Error 32-bit EL0/EL1
+
+
+
+/*
+ * Switch down to EL1 and executes our EL1 payload.
+ * Implemented in assembly, as this manipulates the stack.
+ *
+ * Obliterates the stack, but leaves the rest of memory intact. This should be
+ *  fine, as we should be hiding the EL2 memory from the rest of the system.
+ *
+ * x0: The location of the device tree to be passed into EL0.
+ * x1: The argument to become the x0 argument for the EL0 program.
+ */
+.global launch_horizon
+launch_horizon:
+
+        // Set up a post-EL1-switch return address...
+        msr     elr_el2, x0
+
+        // .. and set up the CPSR after we switch to EL1.
+        // We overwrite the saved program status register. Note that setting
+        // this with the EL = EL1 is what actually causes the switch.
+        mov     x2, #0x3c5     // EL1_SP1 | D | A | I | F
+        msr     spsr_el2, x2
+
+        // Reset the stack pointer to the very end of the stack, so it's
+        // fresh and clean for when we jump back up into EL2.
+        ldr     x2, =el2_stack_end
+        mov     sp, x2
+
+        // ... and switch down to EL1. (This essentially asks the processor
+        // to switch down to EL1 and then load ELR_EL2 to the PC.)
+        mov     x0, x1
+        eret
+
+
+/**
+ * Panic handler; panics with a defined color code.
+ *
+ * x0: the relevant code
+ */
+.global _panic_with_color
+_panic_with_color:
+
+        // Set the panic color.
+        ldr    x1, =PMC_SCRATCH_PANIC_COLOR_REG
+        str    w0, [x1]
+
+        // PMC reset
+        ldr    x0, =PMC_CONTROL_REG
+        ldr    x1, =PMC_CONTROL_ISSUE_RESET
+        str    w1, [x0]
+
+        // We shouldn't ever reach here; trap.
+1:      b       1b
+
+
+
+
+/**
+ * Push and pop 'psuedo-op' macros that simplify the ARM syntax to make the below pretty.
+ */
+.macro  push, xreg1, xreg2
+    stp     \xreg1, \xreg2, [sp, #-16]!
+.endm
+.macro  pop, xreg1, xreg2
+    ldp     \xreg1, \xreg2, [sp], #16
+.endm
+
+/**
+ * Macro that saves registers onto the stack when entering an exception handler--
+ * effectively saving the guest state. Once this method is complete, *sp will
+ * point to a struct guest_state.
+ *
+ * You can modify this to save whatever you'd like, but:
+ *   1) We can only push in pairs due to armv8 architecture quirks.
+ *   2) Be careful not to trounce registers until after you've saved them.
+ *   3) r31 is your stack pointer, and doesn't need to be saved. You'll want to
+ *      save the lesser EL's stack pointers separately.
+ *   4) Make sure any changes you make are reflected both in _restore_registers_
+ *      and in struct guest_state, or things will break pretty badly.
+ */
+.macro  save_registers
+        // General purpose registers x1 - x30
+        push    x29, x30
+        push    x27, x28
+        push    x25, x26
+        push    x23, x24
+        push    x21, x22
+        push    x19, x20
+        push    x17, x18
+        push    x15, x16
+        push    x13, x14
+        push    x11, x12
+        push    x9,  x10
+        push    x7,  x8
+        push    x5,  x6
+        push    x3,  x4
+        push    x1,  x2
+
+        // x0 and the el2_esr
+        mrs     x20, esr_el2
+        push    x20, x0
+
+        // the el1_sp and el0_sp
+        mrs     x0, sp_el0
+        mrs     x1, sp_el1
+        push    x0, x1
+
+        // the el1 elr/spsr
+        mrs     x0, elr_el1
+        mrs     x1, spsr_el1
+        push    x0, x1
+
+        // the el2 elr/spsr
+        mrs     x0, elr_el2
+        mrs     x1, spsr_el2
+        push    x0, x1
+
+.endm
+
+/**
+ * Macro that restores registers when returning from EL2.
+ * Mirrors save_registers.
+ */
+.macro restore_registers
+        // the el2 elr/spsr
+        pop     x0, x1
+        msr     elr_el2, x0
+        msr     spsr_el2, x1
+
+        // the el1 elr/spsr
+        pop     x0, x1
+        msr     elr_el1, x0
+        msr     spsr_el1, x1
+
+        // the el1_sp and el0_sp
+        pop     x0, x1
+        msr     sp_el0, x0
+        msr     sp_el1, x1
+
+        // x0, and the el2_esr
+        // Note that we don't restore el2_esr, as this wouldn't
+        // have any meaning.
+        pop    x20, x0
+
+        // General purpose registers x1 - x30
+        pop    x1,  x2
+        pop    x3,  x4
+        pop    x5,  x6
+        pop    x7,  x8
+        pop    x9,  x10
+        pop    x11, x12
+        pop    x13, x14
+        pop    x15, x16
+        pop    x17, x18
+        pop    x19, x20
+        pop    x21, x22
+        pop    x23, x24
+        pop    x25, x26
+        pop    x27, x28
+        pop    x29, x30
+.endm
+
+/*
+ * Handler for any vector we're not equipped to handle.
+ */
+_unhandled_vector:
+        // TODO: Save interrupt state and turn off interrupts.
+        save_registers
+
+        // Point x0 at our saved registers, and then call our C handler.
+        mov     x0, sp
+        bl    unhandled_vector
+
+        restore_registers
+        eret
+
+
+/*
+ * Handler for any synchronous event coming from the guest (any trap-to-EL2).
+ * This _stub_ only uses this to handle hypercalls-- hence the name.
+ */
+_handle_hypercall:
+        // TODO: Save interrupt state and turn off interrupts.
+        save_registers
+
+        // Point x0 at our saved registers, and then call our C handler.
+        mov     x0, sp
+        bl    handle_hypercall
+
+        restore_registers
+        eret

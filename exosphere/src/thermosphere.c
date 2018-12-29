@@ -22,13 +22,14 @@
 static uintptr_t g_tms_ep = 0;
 
 void thermosphere_detect(void *section, size_t sec_size) {
-    if (thermosphere_is_present()) {
-        panic_predefined(0xA);
-    }
-    
     thermosphere_header_t *header = (thermosphere_header_t *)section;
     if (header->magic != MAGIC_TMS0) {
         return;
+    }
+
+    /* Ensure we don't have two thermosphere sections. */
+    if (thermosphere_is_present()) {
+        panic_predefined(0xA);
     }
     
     /* Check the physical base matches the section. */
