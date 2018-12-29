@@ -33,6 +33,7 @@
 #include "sysctr0.h"
 #include "exocfg.h"
 #include "smc_api.h"
+#include "thermosphere.h"
 
 extern void *__start_cold_addr;
 extern size_t __bin_size;
@@ -445,6 +446,10 @@ static void load_package2_sections(package2_meta_t *metadata, uint32_t master_ke
         } else if (size != 0) {
             package2_crypt_ctr(master_key_rev, dst_start, size, src_start, size, metadata->section_ctrs[section], 0x10);
         }
+        
+        /* Try to detect thermosphere presence. */
+        thermosphere_detect(dst_start, metadata->section_sizes[section]);
+        
         cur_section_offset += size;
     }
 
@@ -470,7 +475,7 @@ static void copy_warmboot_bin_to_dram() {
             warmboot_src = (uint8_t *)0x4003D800;
             break;
     }
-    uint8_t *warmboot_dst = (uint8_t *)0x8000D000;
+    uint8_t *warmboot_dst = (uint8_t *)WARMBOOT_DST_ADDRESS;
     const size_t warmboot_size = 0x2000;
     
     /* Flush cache, to ensure warmboot is where we need it to be. */
@@ -516,7 +521,7 @@ void load_package2(coldboot_crt0_reloc_list_t *reloc_list) {
     
     /* Perform initial PMC register writes, if relevant. */
     if (exosphere_get_target_firmware() >= ATMOSPHERE_TARGET_FIRMWARE_400) {
-        MAKE_REG32(PMC_BASE + 0x054) = 0x8000D000; 
+        MAKE_REG32(PMC_BASE + 0x054) = (uint32_t)WARMBOOT_DST_ADDRESS; 
         MAKE_REG32(PMC_BASE + 0x0A0) &= 0xFFF3FFFF; 
         MAKE_REG32(PMC_BASE + 0x818) &= 0xFFFFFFFE; 
         MAKE_REG32(PMC_BASE + 0x334) |= 0x10;

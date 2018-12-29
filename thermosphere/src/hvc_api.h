@@ -14,4 +14,15 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
  
-void printk(char *fmt, ...);
+#ifndef THERMOSPHERE_HVC_API_H
+#define THERMOSPHERE_HVC_API_H
+
+#include <stdint.h>
+
+typedef struct {
+    uint64_t X[31];
+} hvc_args_t;
+
+void handle_synch_exception(uint64_t esr_el2, hvc_args_t *args);
+
+#endif

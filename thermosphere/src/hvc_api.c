@@ -14,23 +14,10 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
  
-#include "printk.h"
-#include "vsprintf.h"
+#include <stdint.h>
 
-/**
- * Temporary stand-in main printk.
- *
- * TODO: This should print via UART, console framebuffer, and to a ring for
- * consumption by Horizon
- */
-void printk(char *fmt, ...)
-{
-    va_list list;
-    char buf[512];
-    va_start(list, fmt);
-    vsnprintf(buf, sizeof(buf), fmt, list);
+#include "hvc_api.h"
 
-    /* FIXME: print via UART */
-
-    va_end(list);
+void handle_synch_exception(uint64_t esr_el2, hvc_args_t *args) {
+    /* TODO */
 }

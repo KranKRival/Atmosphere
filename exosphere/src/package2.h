@@ -55,6 +55,7 @@ static inline uintptr_t get_nx_bootloader_mailbox_base(void) {
 #define NX_BOOTLOADER_PACKAGE2_LOAD_ADDRESS ((void *)(0xA9800000ull))
 
 #define DRAM_BASE_PHYSICAL (0x80000000ull)
+#define WARMBOOT_DST_ADDRESS (0x8001E000ull)
 
 #define MAGIC_PK21 (0x31324B50)
 #define PACKAGE2_SIZE_MAX 0x7FC000

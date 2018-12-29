@@ -447,7 +447,7 @@ uint32_t nxboot_main(void) {
 
     /* Select the right address for the warmboot firmware. */
     if (MAILBOX_EXOSPHERE_CONFIGURATION->target_firmware < ATMOSPHERE_TARGET_FIRMWARE_400) {
-        warmboot_memaddr = (void *)0x8000D000;
+        warmboot_memaddr = (void *)0x8000D000; // 0x8001e0000
     } else if (MAILBOX_EXOSPHERE_CONFIGURATION->target_firmware < ATMOSPHERE_TARGET_FIRMWARE_600) {
         warmboot_memaddr = (void *)0x4003B000;
     } else {

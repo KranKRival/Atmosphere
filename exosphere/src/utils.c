@@ -24,13 +24,15 @@
 
 #define SAVE_SYSREG64(reg, ofs) do { __asm__ __volatile__ ("mrs %0, " #reg : "=r"(temp_reg) :: "memory"); MAKE_REG32(MMIO_GET_DEVICE_ADDRESS(MMIO_DEVID_DEBUG_IRAM) + ofs) = (uint32_t)((temp_reg >> 0) & 0xFFFFFFFFULL); MAKE_REG32(MMIO_GET_DEVICE_ADDRESS(MMIO_DEVID_DEBUG_IRAM) + ofs + 4) = (uint32_t)((temp_reg >> 32) & 0xFFFFFFFFULL); } while(false)
 
+#define RCM_REBOOT_ON_PANIC 1
+    
 __attribute__ ((noreturn)) void panic(uint32_t code) {
     /* Set Panic Code for NX_BOOTLOADER. */
     if (APBDEV_PMC_SCRATCH200_0 == 0) {
         APBDEV_PMC_SCRATCH200_0 = code;
     }
     
-    /* // Uncomment for Debugging.
+#if RCM_REBOOT_ON_PANIC
     uint64_t temp_reg;
     MAKE_REG32(MMIO_GET_DEVICE_ADDRESS(MMIO_DEVID_DEBUG_IRAM)) = APBDEV_PMC_SCRATCH200_0;
     SAVE_SYSREG64(ESR_EL3, 0x10);
@@ -38,18 +40,20 @@ __attribute__ ((noreturn)) void panic(uint32_t code) {
     SAVE_SYSREG64(FAR_EL3, 0x20);
     MAKE_REG32(MMIO_GET_DEVICE_ADDRESS(MMIO_DEVID_RTC_PMC) + 0x450ull) = 0x2;
     MAKE_REG32(MMIO_GET_DEVICE_ADDRESS(MMIO_DEVID_RTC_PMC) + 0x400ull) = 0x10;
-    */
+#endif
     
     /* TODO: Custom Panic Driver, which displays to screen without rebooting. */
     /* For now, just use NX BOOTLOADER's panic. */
     fuse_disable_programming();
     APBDEV_PMC_CRYPTO_OP_0 = 1; /* Disable all SE operations. */
-    // while (1) { }
+#if RCM_REBOOT_ON_PANIC  
+    while (1) { }
+#endif
     watchdog_reboot();
 }
 
 __attribute__ ((noreturn)) void generic_panic(void) {
-    /* //Uncomment for Debugging.
+#if RCM_REBOOT_ON_PANIC  
     uint64_t temp_reg;    
     do { __asm__ __volatile__ ("mov %0, LR" : "=r"(temp_reg) :: "memory"); } while (false);
     MAKE_REG32(MMIO_GET_DEVICE_ADDRESS(MMIO_DEVID_DEBUG_IRAM) + 0x28) = (uint32_t)((temp_reg >> 0) & 0xFFFFFFFFULL);
@@ -57,7 +61,8 @@ __attribute__ ((noreturn)) void generic_panic(void) {
     do { __asm__ __volatile__ ("mov %0, SP" : "=r"(temp_reg) :: "memory"); } while (false);
     for (unsigned int i = 0; i < 0x80; i += 4) {
          MAKE_REG32(MMIO_GET_DEVICE_ADDRESS(MMIO_DEVID_DEBUG_IRAM) + 0x40 + i) = *((volatile uint32_t *)(temp_reg + i));
-    } */
+    }
+#endif
     panic(0xFF000006);
 }
 
