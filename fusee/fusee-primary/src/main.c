@@ -29,11 +29,17 @@
 #include "lib/vsprintf.h"
 #include "lib/ini.h"
 #include "display/video_fb.h"
+#include "lib/usb.h"
+#include "lib/dmesg.h"
+#include "usb_fusee.h"
 
 extern void (*__program_exit_callback)(int rc);
 
 static void *g_framebuffer;
 static char g_bct0_buffer[BCTO_MAX_SIZE];
+
+// Gloabl object for our USB controller.
+usb_controller_t g_usb;
 
 #define CONFIG_LOG_LEVEL_KEY "log_level"
 
@@ -87,6 +93,10 @@ static int config_ini_handler(void *user, const char *section, const char *name,
 static void setup_env(void) {
     g_framebuffer = (void *)0xC0000000;
 
+    /* Initialize our debug ring. */
+    debug_ring_init();
+    print(SCREEN_LOG_LEVEL_DEBUG, "USB logging enabled.\n");
+
     /* Initialize hardware. */
     nx_hwinit();
 
@@ -108,7 +118,11 @@ static void setup_env(void) {
 
     /* Set up the exception handlers. */
     setup_exception_handlers();
-        
+
+    /* Set up the USB controller. */
+    usb_controller_init(&g_usb);
+    usb_register_vendor_request_handler(&g_usb, fusee_handle_vendor_request);
+
     /* Mount the SD card. */
     mount_sd();
 }

@@ -25,14 +25,41 @@
 #include "car.h"
 #include "btn.h"
 
+#include "lib/usb.h"
 #include "lib/log.h"
 
 #include <inttypes.h>
 
+extern usb_controller_t g_usb;
+
+/**
+ * Handle tasks to be executed when the CPU is idle,
+ * e.g. while busy waiting. This variant includes tasks
+ * that should continue after a fatal error.
+ *
+ * (For example, we include USB so logs can be extracted.)
+ */
+void handle_background_tasks_post_fatal()
+{
+   usb_handle_events(&g_usb);
+}
+
+
+/**
+ * Handle tasks to be executed when the CPU is idle,
+ * e.g. while busy waiting.
+ */
+void handle_background_tasks()
+{
+    // Include the tasks that continue post-fatal-error.
+    handle_background_tasks_post_fatal();
+}
+
+
 void wait(uint32_t microseconds) {
     uint32_t old_time = TIMERUS_CNTR_1US_0;
     while (TIMERUS_CNTR_1US_0 - old_time <= microseconds) {
-        /* Spin-lock. */
+        handle_background_tasks();
     }
 }
 
@@ -59,9 +86,13 @@ __attribute__((noreturn)) void pmc_reboot(uint32_t scratch0) {
     }
 }
 
+
+
 __attribute__((noreturn)) void wait_for_button_and_reboot(void) {
     uint32_t button;
     while (true) {
+        handle_background_tasks_post_fatal();
+
         button = btn_read();
         if (button & BTN_POWER) {
             pmc_reboot(1 << 1);

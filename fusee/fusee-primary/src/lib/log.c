@@ -18,6 +18,7 @@
 
 #include "../display/video_fb.h"
 #include "vsprintf.h"
+#include "dmesg.h"
 
 /* default log level for screen output */
 ScreenLogLevel g_screen_log_level = SCREEN_LOG_LEVEL_NONE;
@@ -56,10 +57,10 @@ void vprint(ScreenLogLevel screen_log_level, const char *fmt, va_list args)
     /* we don't need that flag here, but if it gets used, strip it so we print correctly */
     screen_log_level &= ~SCREEN_LOG_LEVEL_NO_PREFIX;
 
-    /* log to UART */
+    /* log to all relevant sources */
     log_to_uart(buf);
-
     print_to_screen(screen_log_level, buf);
+    debug_ring_write_string(buf);
 }
 
 static void add_prefix(ScreenLogLevel screen_log_level, const char *fmt, char *buf) {
@@ -120,8 +121,8 @@ void print(ScreenLogLevel screen_log_level, const char * fmt, ...)
     vsnprintf(message, PRINT_MESSAGE_MAX_LENGTH, buf, args);
     va_end(args);
 
-    /* log to UART */
+    /* log to all sinks */
     log_to_uart(message);
-
     print_to_screen(screen_log_level, message);
+    debug_ring_write_string(message);
 }

@@ -127,4 +127,21 @@ __attribute__((noreturn)) void generic_panic(void);
 
 __attribute__((noreturn)) void fatal_error(const char *fmt, ...);
 
+
+/**
+ * Handle tasks to be executed when the CPU is idle,
+ * e.g. while busy waiting. This variant includes tasks
+ * that should continue after a fatal error.
+ *
+ * (For example, we include USB so logs can be extracted.)
+ */
+void handle_background_tasks_post_fatal();
+
+
+/**
+ * Handle tasks to be executed when the CPU is idle,
+ * e.g. while busy waiting.
+ */
+void handle_background_tasks();
+
 #endif
